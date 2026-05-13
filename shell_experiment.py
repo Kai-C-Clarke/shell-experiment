@@ -328,7 +328,7 @@ class ShellExperiment:
             payload["enable_thinking"] = False
 
         try:
-            with httpx.Client(timeout=30.0) as client:
+            with httpx.Client(timeout=15.0) as client:
                 resp = client.post(cfg["url"], json=payload, headers=headers)
                 if resp.status_code == 429:
                     log.warning(f"[SHELL] Entity {entity_id} ({cfg['name']}) rate limited (429) — skipping turn")
@@ -489,7 +489,12 @@ class ShellExperiment:
 
         while self.running:
             try:
-                self.run_turn()
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(self.run_turn)
+                    future.result(timeout=25)
+            except concurrent.futures.TimeoutError:
+                log.warning(f"[SHELL] Turn {self.turn} timed out after 25s — skipping")
             except Exception as ex:
                 log.error(f"[SHELL] Turn error: {ex}")
             time.sleep(TURN_INTERVAL)

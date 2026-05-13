@@ -411,6 +411,7 @@ class ShellExperiment:
     # ── One turn ───────────────────────────────────────────────────────────────
     def run_turn(self):
         self.turn += 1
+        log.info(f"[SHELL] Starting turn {self.turn}")
 
         # Physics
         with self._lock:
@@ -419,11 +420,14 @@ class ShellExperiment:
 
         # Build prompts simultaneously
         prompts = {eid: self.build_prompt(eid) for eid in ["A","B","C"]}
+        log.info(f"[SHELL] Prompts built, calling entities")
 
         # Call all three entities (could parallelise with threads but sequential is fine)
         raw_responses = {}
         for eid in ["A","B","C"]:
+            log.info(f"[SHELL] Calling entity {eid}")
             raw = self.call_entity(eid, prompts[eid])
+            log.info(f"[SHELL] Entity {eid} returned: {str(raw)[:60] if raw else 'None'}")
             raw_responses[eid] = raw
 
         # Parse responses
@@ -489,14 +493,9 @@ class ShellExperiment:
 
         while self.running:
             try:
-                import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                    future = executor.submit(self.run_turn)
-                    future.result(timeout=25)
-            except concurrent.futures.TimeoutError:
-                log.warning(f"[SHELL] Turn {self.turn} timed out after 25s — skipping")
+                self.run_turn()
             except Exception as ex:
-                log.error(f"[SHELL] Turn error: {ex}")
+                log.error(f"[SHELL] Turn error: {ex}", exc_info=True)
             time.sleep(TURN_INTERVAL)
 
         log.info("[SHELL] Shell Experiment stopped.")

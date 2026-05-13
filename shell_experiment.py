@@ -36,10 +36,10 @@ ENTITY_CONFIG = {
         "model": "qwen3.6-flash",
     },
     "C": {
-        "name": "Gemini",
-        "url": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
-        "key": os.environ.get("GEMINI_API_KEY", ""),
-        "model": "gemini-2.5-flash",
+        "name": "Mistral",
+        "url": "https://api.mistral.ai/v1/chat/completions",
+        "key": os.environ.get("MISTRAL_API_KEY", ""),
+        "model": "mistral-small-latest",
     },
 }
 

@@ -90,14 +90,18 @@ No turn-taking. The field is superposition of all emissions.
 
 Output ONLY a JSON object with shell arrays and central node value.
 No explanation. No text.
-Format: {
+Required format (minimum):
+{
   "shell_1": [float],
   "shell_2": [f,f,f,f],
-  "shell_3": [f x 27],
-  "shell_4": [f x 256],
   "central": float
 }
-Values: 0.0 to 1.0. Omit shell_5 and shell_6 unless you choose to use them.
+Optional (include when ready to use higher shells):
+  "shell_3": [27 floats],
+  "shell_4": [256 floats]
+Values: 0.0 to 1.0. Start with shell_1, shell_2, central only.
+Add shell_3 and shell_4 only when you have something to express in them.
+Omit shell_5 and shell_6 unless you choose to use them.
 """
 
 # ── Mutual Information (discretised) ──────────────────────────────────────────
@@ -317,7 +321,7 @@ class ShellExperiment:
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user",   "content": prompt}
             ],
-            "max_tokens":  600,
+            "max_tokens":  1500,
             "temperature": 0.7,
         }
         if "qwen" in cfg["model"].lower():

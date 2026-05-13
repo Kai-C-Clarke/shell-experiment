@@ -330,7 +330,16 @@ class ShellExperiment:
         try:
             with httpx.Client(timeout=30.0) as client:
                 resp = client.post(cfg["url"], json=payload, headers=headers)
+                if resp.status_code == 429:
+                    log.warning(f"[SHELL] Entity {entity_id} ({cfg['name']}) rate limited (429) — skipping turn")
+                    return None
+                if resp.status_code != 200:
+                    log.warning(f"[SHELL] Entity {entity_id} ({cfg['name']}) HTTP {resp.status_code} — skipping turn")
+                    return None
                 data = resp.json()
+                if not isinstance(data, dict) or "choices" not in data:
+                    log.warning(f"[SHELL] Entity {entity_id} ({cfg['name']}) unexpected response format")
+                    return None
                 return data["choices"][0]["message"]["content"].strip()
         except Exception as ex:
             log.warning(f"[SHELL] Entity {entity_id} ({cfg['name']}) error: {ex}")

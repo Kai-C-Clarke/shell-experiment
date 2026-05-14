@@ -44,6 +44,7 @@ ENTITY_CONFIG = {
 }
 
 TURN_INTERVAL  = float(os.environ.get("SHELL_TURN_INTERVAL", "30"))
+LOG_FILE       = "/data/shell_full_log.jsonl"  # persists on Render disk
 DECAY_RATE     = 0.03
 JITTER         = 0.01
 MI_WINDOW      = 50

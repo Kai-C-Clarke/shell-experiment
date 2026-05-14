@@ -217,7 +217,7 @@ class ShellExperiment:
         self.mi_bc = 0.0
         self.mi_ac = 0.0
 
-        self.turn_log      = collections.deque(maxlen=500)
+        self.turn_log      = collections.deque(maxlen=50)
         self.interventions = []
         self._lock         = threading.Lock()
 

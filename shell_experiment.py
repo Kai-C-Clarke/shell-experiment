@@ -216,7 +216,7 @@ class ShellExperiment:
         self.mi_bc = 0.0
         self.mi_ac = 0.0
 
-        self.turn_log      = collections.deque(maxlen=5000)
+        self.turn_log      = collections.deque(maxlen=500)
         self.interventions = []
         self._lock         = threading.Lock()
 
@@ -457,6 +457,12 @@ class ShellExperiment:
                 "shell_6_active": any(len(self.entities[eid].shell_6)>0 for eid in ["A","B","C"]),
             }
             self.turn_log.append(entry)
+            # Append to persistent log file
+            try:
+                with open(LOG_FILE, "a") as lf:
+                    lf.write(json.dumps(entry) + "\n")
+            except Exception as ex:
+                log.warning(f"[SHELL] Log file write error: {ex}")
 
             log.info(f"[SHELL] T{self.turn} beacon=S{self.beacon_shell}({self.current_beacon():.3f}) "
                      f"MI ab={self.mi_ab:.3f} bc={self.mi_bc:.3f} ac={self.mi_ac:.3f} "
@@ -548,6 +554,23 @@ def start_shell_experiment(app):
                 "turn_log":      list(experiment.turn_log),
                 "interventions": experiment.interventions,
             })
+
+    @app.route("/shell/exportlog")
+    def shell_exportlog():
+        from flask import Response
+        try:
+            with open(LOG_FILE, "r") as lf:
+                lines = lf.readlines()
+            entries = [json.loads(l) for l in lines if l.strip()]
+            return Response(
+                json.dumps({"total_entries": len(entries), "turn_log": entries}),
+                mimetype="application/json"
+            )
+        except FileNotFoundError:
+            return Response(json.dumps({"total_entries": 0, "turn_log": []}),
+                          mimetype="application/json")
+        except Exception as ex:
+            return Response(json.dumps({"error": str(ex)}), mimetype="application/json")
 
     @app.route("/shell/start")
     def shell_start():

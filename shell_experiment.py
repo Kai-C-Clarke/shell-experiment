@@ -516,24 +516,49 @@ def start_shell_experiment(app):
     @app.route("/shell/health")
     def shell_health():
         from flask import jsonify
+        # Read from disk log for accurate turn count across worker restarts
+        try:
+            with open(LOG_FILE, "r") as lf:
+                lines = [l for l in lf.readlines() if l.strip()]
+            last = json.loads(lines[-1]) if lines else None
+            disk_turn = last.get("turn", 0) if last else 0
+            last_entities = last.get("entities", {}) if last else {}
+            nuclei = {eid: e.get("nucleus", 0.5) for eid, e in last_entities.items()}
+        except Exception:
+            disk_turn = 0
+            nuclei = {}
         s = experiment.state()
         return jsonify({
-            "status":       s["status"],
-            "turn":         s["turn"],
-            "beacon_shell": s["beacon"]["shell"],
-            "beacon_value": s["beacon"]["value"],
-            "mi_ab":        s["mi"]["ab"],
-            "mi_bc":        s["mi"]["bc"],
-            "mi_ac":        s["mi"]["ac"],
-            "central":      s["field"]["central"],
+            "status":         "running",
+            "turn":           disk_turn,
+            "turn_mem":       s["turn"],
+            "beacon_shell":   s["beacon"]["shell"],
+            "beacon_value":   s["beacon"]["value"],
+            "mi_ab":          s["mi"]["ab"],
+            "mi_bc":          s["mi"]["bc"],
+            "mi_ac":          s["mi"]["ac"],
+            "central":        s["field"]["central"],
             "shell_5_active": s["shell_5_active"],
             "shell_6_active": s["shell_6_active"],
+            "nuclei":         nuclei,
         })
 
     @app.route("/shell/state")
     def shell_state():
         from flask import jsonify
-        return jsonify(experiment.state())
+        # Augment with disk turn count
+        try:
+            with open(LOG_FILE, "r") as lf:
+                lines = [l for l in lf.readlines() if l.strip()]
+            disk_turn = json.loads(lines[-1]).get("turn", 0) if lines else 0
+            total_entries = len(lines)
+        except Exception:
+            disk_turn = 0
+            total_entries = 0
+        s = experiment.state()
+        s["disk_turn"] = disk_turn
+        s["total_entries_on_disk"] = total_entries
+        return jsonify(s)
 
     @app.route("/shell/log")
     def shell_log():

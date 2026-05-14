@@ -310,7 +310,7 @@ class ShellExperiment:
     # ── Call one entity ────────────────────────────────────────────────────────
     def call_entity(self, entity_id, prompt):
         cfg = ENTITY_CONFIG[entity_id]
-        if not cfg["key"]: return None
+        if not cfg["key"]: return None, {}
 
         headers = {
             "Content-Type":  "application/json",
@@ -333,18 +333,36 @@ class ShellExperiment:
                 resp = client.post(cfg["url"], json=payload, headers=headers)
                 if resp.status_code == 429:
                     log.warning(f"[SHELL] Entity {entity_id} ({cfg['name']}) rate limited (429) — skipping turn")
-                    return None
+                    return None, {}
                 if resp.status_code != 200:
                     log.warning(f"[SHELL] Entity {entity_id} ({cfg['name']}) HTTP {resp.status_code} — skipping turn")
-                    return None
+                    return None, {}
                 data = resp.json()
                 if not isinstance(data, dict) or "choices" not in data:
                     log.warning(f"[SHELL] Entity {entity_id} ({cfg['name']}) unexpected response format")
-                    return None
-                return data["choices"][0]["message"]["content"].strip()
+                    return None, {}
+
+                choice = data["choices"][0]
+                content = choice["message"]["content"].strip()
+
+                # ── API metadata ──────────────────────────────────────────────
+                api_meta = {
+                    "finish_reason":    choice.get("finish_reason"),
+                    "prompt_tokens":    data.get("usage", {}).get("prompt_tokens"),
+                    "completion_tokens": data.get("usage", {}).get("completion_tokens"),
+                    "total_tokens":     data.get("usage", {}).get("total_tokens"),
+                }
+
+                if api_meta["finish_reason"] != "stop":
+                    log.warning(f"[SHELL] Entity {entity_id} finish_reason={api_meta['finish_reason']} "
+                                f"(prompt_tokens={api_meta['prompt_tokens']} "
+                                f"completion_tokens={api_meta['completion_tokens']})")
+
+                return content, api_meta
+
         except Exception as ex:
             log.warning(f"[SHELL] Entity {entity_id} ({cfg['name']}) error: {ex}")
-            return None
+            return None, {}
 
     # ── Superposition update ───────────────────────────────────────────────────
     def superpose(self, emissions):
@@ -423,13 +441,16 @@ class ShellExperiment:
         prompts = {eid: self.build_prompt(eid) for eid in ["A","B","C"]}
         log.info(f"[SHELL] Prompts built, calling entities")
 
-        # Call all three entities (could parallelise with threads but sequential is fine)
+        # Call all three entities
         raw_responses = {}
+        api_metadata  = {}
         for eid in ["A","B","C"]:
             log.info(f"[SHELL] Calling entity {eid}")
-            raw = self.call_entity(eid, prompts[eid])
-            log.info(f"[SHELL] Entity {eid} returned: {str(raw)[:60] if raw else 'None'}")
+            raw, meta = self.call_entity(eid, prompts[eid])
+            log.info(f"[SHELL] Entity {eid} returned: {str(raw)[:60] if raw else 'None'} "
+                     f"finish={meta.get('finish_reason')} tokens={meta.get('total_tokens')}")
             raw_responses[eid] = raw
+            api_metadata[eid]  = meta
 
         # Parse responses
         emissions = {}
@@ -446,7 +467,7 @@ class ShellExperiment:
             self.superpose(emissions)
             self.advance_beacon()
 
-            # Log entry
+            # Log entry — now includes api_meta per entity
             entry = {
                 "turn":      self.turn,
                 "beacon":    {"shell": self.beacon_shell, "value": self.current_beacon()},
@@ -454,6 +475,7 @@ class ShellExperiment:
                 "field":     self.field.as_dict(),
                 "entities":  {eid: self.entities[eid].compact() for eid in ["A","B","C"]},
                 "raw":       {eid: raw_responses[eid] for eid in ["A","B","C"]},
+                "api_meta":  api_metadata,
                 "shell_5_active": any(len(self.entities[eid].shell_5)>0 for eid in ["A","B","C"]),
                 "shell_6_active": any(len(self.entities[eid].shell_6)>0 for eid in ["A","B","C"]),
             }
@@ -616,4 +638,3 @@ def start_shell_experiment(app):
     thread = threading.Thread(target=experiment.run, daemon=True)
     thread.start()
     log.info("[SHELL] Shell experiment thread launched.")
-

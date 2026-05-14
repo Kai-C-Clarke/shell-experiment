@@ -140,8 +140,8 @@ class EntityState:
         self.nucleus  = 0.5  # will be set on first emission
         self.shell_1  = [0.5]
         self.shell_2  = [0.5]*4
-        self.shell_3  = [0.5]*27
-        self.shell_4  = [0.5]*256
+        self.shell_3  = None   # allocated only when entity uses it
+        self.shell_4  = None   # allocated only when entity uses it
         self.shell_5  = []   # latent
         self.shell_6  = []   # latent
         self.history  = collections.deque(maxlen=MI_WINDOW)  # shell_1 history
@@ -151,8 +151,8 @@ class EntityState:
             "nucleus": self.nucleus,
             "shell_1": self.shell_1,
             "shell_2": self.shell_2,
-            "shell_3": self.shell_3,
-            "shell_4": self.shell_4,
+            "shell_3": self.shell_3 if self.shell_3 else [],
+            "shell_4": self.shell_4 if self.shell_4 else [],
         }
         if self.shell_5: d["shell_5"] = self.shell_5
         if self.shell_6: d["shell_6"] = self.shell_6
@@ -164,8 +164,8 @@ class EntityState:
             "nucleus": round(self.nucleus,4),
             "s1": [round(v,4) for v in self.shell_1],
             "s2": [round(v,4) for v in self.shell_2],
-            "s3_mean": round(sum(self.shell_3)/len(self.shell_3),4),
-            "s4_mean": round(sum(self.shell_4)/len(self.shell_4),4),
+            "s3_mean": round(sum(self.shell_3)/len(self.shell_3),4) if self.shell_3 else 0.5,
+            "s4_mean": round(sum(self.shell_4)/len(self.shell_4),4) if self.shell_4 else 0.5,
             "has_s5": len(self.shell_5)>0,
             "has_s6": len(self.shell_6)>0,
         }
@@ -366,8 +366,8 @@ class ShellExperiment:
                     log.info(f"[SHELL] Entity {eid} ({ENTITY_CONFIG[eid]['name']}) nucleus set: {e.nucleus}")
 
             if "shell_2" in parsed: e.shell_2 = parsed["shell_2"]
-            if "shell_3" in parsed: e.shell_3 = parsed["shell_3"]
-            if "shell_4" in parsed: e.shell_4 = parsed["shell_4"]
+            if "shell_3" in parsed and parsed["shell_3"]: e.shell_3 = parsed["shell_3"]
+            if "shell_4" in parsed and parsed["shell_4"]: e.shell_4 = parsed["shell_4"]
             if "shell_5" in parsed:
                 e.shell_5 = parsed["shell_5"]
                 log.info(f"[SHELL] *** SHELL 5 ACTIVATED by Entity {eid} at turn {self.turn} ***")

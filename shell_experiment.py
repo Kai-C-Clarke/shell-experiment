@@ -140,18 +140,23 @@ ENTITY_SEEDS = {
 
 def get_entity_library_payload(entity_id, ledger_entries):
     """
-    Build the library payload for an entity:
-    their seed arrays + recent ledger deposits.
-    Pure arrays, no labels.
+    Build a compact library payload for an entity.
+    3 seed arrays (rotated by turn to expose all over time) + 3 recent ledger deposits.
+    Kept small to avoid entities parroting the input.
     """
     payload = []
-    # Add entity's seed arrays
-    for key in ENTITY_SEEDS.get(entity_id, []):
+    # Rotate through seeds — expose different ones each run
+    keys = ENTITY_SEEDS.get(entity_id, [])
+    # Pick 3 short seeds only (avoid huge s4_circle etc)
+    short_keys = [k for k in keys if k not in ("s4_circle", "pt_shell4", "pt_shell3", "s3_sine", "s3_fibonacci")]
+    for key in short_keys[:3]:
         payload.append(ATOMIC_LIBRARY[key])
-    # Add recent ledger entries (payload only, no metadata)
-    for entry in ledger_entries[-MAX_LEDGER_ENTRIES:]:
-        if entry.get("payload"):
-            payload.append(entry["payload"])
+    # Add last 3 entity deposits only (not seed entries)
+    entity_deposits = [e for e in ledger_entries if e.get("entity") not in ("SEED", None)]
+    for entry in entity_deposits[-3:]:
+        p = entry.get("payload")
+        if p and isinstance(p, list) and len(p) <= 10:
+            payload.append(p)
     return payload
 
 # ── Mutual Information ─────────────────────────────────────────────────────────
@@ -475,7 +480,7 @@ class ShellExperiment:
         payload = {
             "model":       cfg["model"],
             "messages":    [
-                {"role": "system", "content": "RESPOND WITH JSON ARRAY ONLY: [[s1],[s2_0,s2_1,s2_2,s2_3],central]"},
+                {"role": "system", "content": "EMIT ONLY a new short JSON array: [[your_float],[f,f,f,f],central_float]. Do not reproduce the input. Values 0.0-1.0."},
                 {"role": "user",   "content": prompt}
             ],
             "max_tokens":  2000,

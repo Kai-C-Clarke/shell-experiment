@@ -474,11 +474,13 @@ class ShellExperiment:
         }
         payload = {
             "model":       cfg["model"],
-            "messages":    [{"role": "user", "content": prompt}],
+            "messages":    [
+                {"role": "system", "content": "RESPOND WITH JSON ARRAY ONLY: [[s1],[s2_0,s2_1,s2_2,s2_3],central]"},
+                {"role": "user",   "content": prompt}
+            ],
             "max_tokens":  2000,
             "temperature": 0.7,
         }
-        # No system prompt — zero language
         if "qwen" in cfg["model"].lower():
             payload["enable_thinking"] = False
 

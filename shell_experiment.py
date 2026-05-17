@@ -818,6 +818,90 @@ def start_shell_experiment(app):
         experiment.running = False
         return jsonify({"status": "stopped"})
 
+
+    @app.route("/shell/inject", methods=["POST"])
+    def shell_inject():
+        from flask import request
+        import math as _math
+
+        data = request.get_json(silent=True)
+        if not data:
+            return jsonify({"error": "JSON body required"}), 400
+
+        payload = data.get("payload")
+        if not payload or not isinstance(payload, list):
+            return jsonify({"error": "payload must be a non-empty array"}), 400
+
+        cleaned = []
+        for v in payload:
+            try:
+                fv = float(v)
+                if not _math.isfinite(fv):
+                    return jsonify({"error": f"non-finite value: {v}"}), 400
+                cleaned.append(round(max(0.0, min(1.0, fv)), 4))
+            except (TypeError, ValueError):
+                return jsonify({"error": f"invalid value: {v}"}), 400
+
+        label = data.get("label", "inject")
+        schedule = data.get("schedule", [])
+
+        entry = {
+            "turn": experiment.turn,
+            "entity": "PORTAL",
+            "label": label,
+            "payload": cleaned,
+        }
+        with experiment.ledger._lock:
+            experiment.ledger.entries.append(entry)
+            try:
+                with open(LEDGER_FILE, "a") as lf:
+                    lf.write(json.dumps(entry) + "\n")
+            except Exception as ex:
+                log.warning(f"[INJECT] Ledger write error: {ex}")
+
+        log.info(f"[INJECT] Portal injection T:{experiment.turn} label={label} len={len(cleaned)}")
+
+        scheduled = []
+        if schedule:
+            def delayed_inject(delay_turns, follow_payload, follow_label):
+                target_turn = experiment.turn + delay_turns
+                while experiment.running and experiment.turn < target_turn:
+                    time.sleep(5)
+                if experiment.running:
+                    follow_entry = {
+                        "turn": experiment.turn,
+                        "entity": "PORTAL",
+                        "label": follow_label,
+                        "payload": follow_payload,
+                    }
+                    with experiment.ledger._lock:
+                        experiment.ledger.entries.append(follow_entry)
+                        try:
+                            with open(LEDGER_FILE, "a") as lf:
+                                lf.write(json.dumps(follow_entry) + "\n")
+                        except Exception as ex:
+                            log.warning(f"[INJECT] Scheduled write error: {ex}")
+                    log.info(f"[INJECT] Scheduled injection: label={follow_label} T:{experiment.turn}")
+
+            for sched in schedule:
+                delay = int(sched.get("delay_turns", 50))
+                s_payload = [round(max(0.0, min(1.0, float(v))), 4) for v in sched.get("payload", [])]
+                s_label = sched.get("label", "inject_scheduled")
+                if s_payload:
+                    t = threading.Thread(target=delayed_inject, args=(delay, s_payload, s_label), daemon=True)
+                    t.start()
+                    scheduled.append({"delay_turns": delay, "label": s_label})
+
+        return jsonify({
+            "status": "injected",
+            "turn": experiment.turn,
+            "label": label,
+            "payload_length": len(cleaned),
+            "payload_preview": cleaned[:8],
+            "scheduled": scheduled,
+        })
+
+
     thread = threading.Thread(target=experiment.run, daemon=True)
     thread.start()
     log.info("[SHELL] Shell experiment v2 thread launched.")

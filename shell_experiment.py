@@ -43,7 +43,7 @@ ENTITY_CONFIG = {
     },
 }
 
-TURN_INTERVAL  = float(os.environ.get("SHELL_TURN_INTERVAL", "30"))
+TURN_INTERVAL  = float(os.environ.get("SHELL_TURN_INTERVAL", "15"))
 LOG_FILE       = "/data/shell_full_log.jsonl"
 LEDGER_FILE    = "/data/shell_ledger.jsonl"
 BLETCHLEY_FILE = "/data/bletchley_reports.jsonl"
@@ -51,7 +51,7 @@ DECAY_RATE     = 0.03
 JITTER         = 0.01
 MI_WINDOW      = 50
 HISTORY_LEN    = 10
-MAX_LEDGER_ENTRIES = 50  # entities see last 50 ledger entries per turn
+MAX_LEDGER_ENTRIES = 20  # entities see last 20 ledger entries per turn (archive preserved on disk)
 SUFFOCATION_FACTOR = 0.95  # compress history if static/null
 
 # ── Shell Structure ────────────────────────────────────────────────────────────

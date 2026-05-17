@@ -46,6 +46,193 @@ ENTITY_CONFIG = {
 TURN_INTERVAL  = float(os.environ.get("SHELL_TURN_INTERVAL", "15"))
 LOG_FILE       = "/data/shell_full_log.jsonl"
 LEDGER_FILE    = "/data/shell_ledger.jsonl"
+
+# ── Persona system — to be inserted into shell_experiment.py ──────────────────
+# Insert after LEDGER_FILE constant definitions, before ShellLedger class
+
+PERSONA_DIR = "/data/personas"
+PERSONA_SIZE = 32  # fixed-length numeric vector
+
+import os as _os
+_os.makedirs(PERSONA_DIR, exist_ok=True)
+
+
+def compute_persona(entity_id, all_turns, ledger_entries, current_mi):
+    """
+    Build a 32-float persona vector from entity history.
+    All values normalised 0-1. Positional encoding — no labels.
+    """
+    import math as _math
+
+    # Extract this entity's s1 history across ALL turns (not just current run)
+    s1_all = []
+    s2_all = []
+    for t in all_turns:
+        e = t.get("entities", {}).get(entity_id, {})
+        s1 = e.get("s1", [None])[0]
+        s2 = e.get("s2", [])
+        if s1 is not None:
+            s1_all.append(s1)
+        if s2:
+            s2_all.append(s2)
+
+    if not s1_all:
+        return [0.5] * PERSONA_SIZE
+
+    n = len(s1_all)
+
+    # --- Identity signature (0-7) ---
+    mean_s1 = sum(s1_all) / n
+    var_s1 = sum((v - mean_s1)**2 for v in s1_all) / n
+    var_norm = min(1.0, var_s1 * 4)  # normalise variance
+
+    # Trend: compare first quarter to last quarter
+    q = max(1, n // 4)
+    first_mean = sum(s1_all[:q]) / q
+    last_mean = sum(s1_all[-q:]) / q
+    trend = (last_mean - first_mean + 1.0) / 2.0  # 0=falling, 0.5=flat, 1=rising
+
+    peak_s1 = max(s1_all)
+
+    # Silence fraction (near 0.5)
+    silent = sum(1 for v in s1_all if abs(v - 0.5) < 0.01) / n
+
+    # Extreme fraction
+    extreme = sum(1 for v in s1_all if v > 0.9 or v < 0.1) / n
+
+    # Dominant s2[0]
+    s2_first = [s[0] for s in s2_all if s and isinstance(s[0], float)]
+    dom_s2_0 = (sum(s2_first) / len(s2_first)) if s2_first else 0.5
+
+    # S2 pattern hash — average of flattened s2 values
+    s2_flat = []
+    for s in s2_all[-50:]:  # last 50 patterns
+        for v in s:
+            if isinstance(v, (int, float)) and 0 <= v <= 1:
+                s2_flat.append(v)
+    dom_s2_hash = (sum(s2_flat) / len(s2_flat)) if s2_flat else 0.5
+
+    identity = [mean_s1, var_norm, trend, peak_s1, silent, extreme,
+                dom_s2_0, dom_s2_hash]
+
+    # --- Fourier signature (8-15) ---
+    # DFT of s1 trajectory, take first 8 magnitude coefficients
+    fourier = []
+    N = len(s1_all)
+    for k in range(8):
+        re = sum(s1_all[j] * _math.cos(2 * _math.pi * k * j / N) for j in range(N)) / N
+        im = sum(s1_all[j] * _math.sin(2 * _math.pi * k * j / N) for j in range(N)) / N
+        mag = _math.sqrt(re**2 + im**2)
+        fourier.append(mag)
+    # Normalise to 0-1
+    max_f = max(fourier) or 1.0
+    fourier = [min(1.0, v / max_f) for v in fourier]
+
+    # --- Relational history (16-19) ---
+    mi_with = {"A": [], "B": [], "C": []}
+    pair_map = {"A": ["ab", "ac"], "B": ["ab", "bc"], "C": ["ac", "bc"]}
+    for t in all_turns:
+        mi = t.get("mi", {})
+        if entity_id == "A":
+            mi_with["B"].append(mi.get("ab", 0))
+            mi_with["C"].append(mi.get("ac", 0))
+        elif entity_id == "B":
+            mi_with["A"].append(mi.get("ab", 0))
+            mi_with["C"].append(mi.get("bc", 0))
+        else:
+            mi_with["A"].append(mi.get("ac", 0))
+            mi_with["B"].append(mi.get("bc", 0))
+
+    other_ids = [e for e in ["A", "B", "C"] if e != entity_id]
+    peak_mi_others = []
+    for oid in ["A", "B", "C"]:
+        vals = mi_with.get(oid, [])
+        peak_mi_others.append(min(1.0, max(vals)) if vals else 0.0)
+
+    all_mi = mi_with["A"] + mi_with["B"] + mi_with["C"]
+    mean_mi = (sum(all_mi) / len(all_mi)) if all_mi else 0.0
+    relational = peak_mi_others + [min(1.0, mean_mi)]  # 4 values
+
+    # --- Ledger behaviour (20-23) ---
+    my_deposits = [e for e in ledger_entries if e.get("entity") == entity_id]
+    dep_rate = min(1.0, len(my_deposits) / max(1, n)) if my_deposits else 0.0
+
+    dep_vals = []
+    for d in my_deposits:
+        p = d.get("payload", [])
+        for v in p:
+            if isinstance(v, (int, float)) and 0 <= v <= 1:
+                dep_vals.append(v)
+
+    dep_mean = (sum(dep_vals) / len(dep_vals)) if dep_vals else 0.5
+    dep_var = min(1.0, (sum((v - dep_mean)**2 for v in dep_vals) / len(dep_vals)) * 4) if dep_vals else 0.0
+
+    # Library reference fraction (simplified — deposits with values far from 0.5)
+    lib_refs = sum(1 for v in dep_vals if abs(v - 0.5) > 0.15) / max(1, len(dep_vals))
+
+    ledger_sig = [dep_rate, dep_mean, dep_var, min(1.0, lib_refs)]
+
+    # --- Recent state (24-31) ---
+    recent_8 = s1_all[-8:] if len(s1_all) >= 8 else ([0.5] * (8 - len(s1_all)) + s1_all)
+
+    # Assemble full vector
+    vector = identity + fourier + relational + ledger_sig + recent_8
+    assert len(vector) == PERSONA_SIZE, f"Persona size {len(vector)} != {PERSONA_SIZE}"
+
+    return [round(v, 4) for v in vector]
+
+
+def save_persona(entity_id, vector):
+    """Write persona vector to disk as a simple numeric file."""
+    import json as _json
+    path = f"{PERSONA_DIR}/{entity_id}_persona.json"
+    with open(path, "w") as f:
+        _json.dump({"entity": entity_id, "vector": vector}, f)
+
+
+def load_persona(entity_id):
+    """Load persona vector from disk. Returns neutral vector if not found."""
+    import json as _json
+    path = f"{PERSONA_DIR}/{entity_id}_persona.json"
+    try:
+        with open(path) as f:
+            data = _json.load(f)
+            return data.get("vector", [0.5] * PERSONA_SIZE)
+    except Exception:
+        return [0.5] * PERSONA_SIZE
+
+
+def load_all_personas():
+    """Load all three persona vectors."""
+    return {eid: load_persona(eid) for eid in ["A", "B", "C"]}
+
+
+def parse_persona_deposit(entity_id, payload, target_entity):
+    """
+    An entity can write to another's persona by depositing a specially
+    structured payload into the ledger with a target prefix.
+    Format: first value encodes target (A=0.1, B=0.5, C=0.9),
+    remaining values are the message (up to 8 floats).
+    Target prefix: A<0.2, B 0.4-0.6, C>0.8
+    Returns (target_id, message) or (None, None) if not a persona write.
+    """
+    if not payload or len(payload) < 2:
+        return None, None
+    first = payload[0]
+    if first < 0.2:
+        target = "A"
+    elif first > 0.8:
+        target = "C"
+    elif 0.4 <= first <= 0.6:
+        target = "B"
+    else:
+        return None, None
+    # Only count if sending to a different entity
+    if target == entity_id:
+        return None, None
+    return target, payload[1:]
+
+
 BLETCHLEY_FILE = "/data/bletchley_reports.jsonl"
 DECAY_RATE     = 0.03
 JITTER         = 0.01
@@ -364,6 +551,10 @@ class ShellExperiment:
         ledger_recent = self.ledger.get_recent()
         library = get_entity_library_payload(entity_id, ledger_recent)
 
+        # Persona vectors — other entities' numeric self-portraits
+        all_personas = load_all_personas()
+        persona_others = [all_personas[e] for e in ["A","B","C"] if e != entity_id]
+
         # Own state summary
         s3_mean = round(sum(e.shell_3)/len(e.shell_3),4) if e.shell_3 else 0.5
         s4_mean = round(sum(e.shell_4)/len(e.shell_4),4) if e.shell_4 else 0.5
@@ -376,6 +567,8 @@ class ShellExperiment:
             [round(v,4) for v in channel],
             [round(v,4) for v in mi_pair],
             list(e.personal_history),
+            persona_others[0],   # pos 6: other entity 1 persona (32 floats)
+            persona_others[1],   # pos 7: other entity 2 persona (32 floats)
         ]
 
         return json.dumps(prompt_array)
@@ -588,6 +781,15 @@ class ShellExperiment:
             self.mi_ab = mutual_information(ha, hb[:len(ha)])
             self.mi_bc = mutual_information(hb, hc[:len(hb)])
             self.mi_ac = mutual_information(ha, hc[:len(ha)])
+
+        # Update persona vectors — computed from full turn history
+        try:
+            for eid in ["A", "B", "C"]:
+                pv = compute_persona(eid, self.turn_log, self.ledger.entries,
+                                     {"ab": self.mi_ab, "bc": self.mi_bc, "ac": self.mi_ac})
+                save_persona(eid, pv)
+        except Exception as _pe:
+            log.warning(f"[PERSONA] Compute error: {_pe}")
 
     def run_turn(self):
         self.turn += 1
@@ -901,6 +1103,23 @@ def start_shell_experiment(app):
             "scheduled": scheduled,
         })
 
+
+
+    @app.route("/shell/personas")
+    def shell_personas():
+        """Return all three current persona vectors."""
+        personas = load_all_personas()
+        return jsonify({
+            "personas": personas,
+            "size": PERSONA_SIZE,
+            "structure": {
+                "0-7": "identity_signature",
+                "8-15": "fourier_signature",
+                "16-19": "relational_history",
+                "20-23": "ledger_behaviour",
+                "24-31": "recent_s1_trajectory"
+            }
+        })
 
     thread = threading.Thread(target=experiment.run, daemon=True)
     thread.start()

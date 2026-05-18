@@ -1,11 +1,10 @@
 """
 app.py — Portal Experiment Server
-Clean rebuild. Shell experiment replaced by Portal.
+portal_experiment.py is the sole active experiment.
+shell_experiment.py has been retired (data preserved externally).
 """
 import logging
 import os
-import threading
-import time
 
 from flask import Flask, jsonify
 from flask_cors import CORS
@@ -30,13 +29,13 @@ def health():
     return jsonify({"service": "portal-experiment", "status": "ok"})
 
 
-# Register portal experiment routes
 try:
     from portal_experiment import start_portal_experiment
     start_portal_experiment(app)
     logging.info("Portal experiment routes registered — /portal/* active")
 except Exception as e:
-    logging.warning(f"Portal experiment failed to register: {e}")
+    logging.error(f"Portal experiment failed to register: {e}")
+    raise
 
 
 if __name__ == "__main__":

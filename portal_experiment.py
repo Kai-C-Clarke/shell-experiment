@@ -78,7 +78,7 @@ def call_llm(entity_id: str, prompt: str, retry_num: int = 0) -> str:
             {"role": "system", "content": build_system_prompt()},
             {"role": "user",   "content": prompt},
         ],
-        "max_tokens":  120,
+        "max_tokens":  300,
         "temperature": 0.05,
     }
     try:

@@ -18,7 +18,7 @@ PI  = math.pi
 
 # ── Core statement encodings ──────────────────────────────────────────────────
 
-S1_VALUE = 0.0                          # 1-1=0  exact truth
+S1_VALUE = 0.31831                    # 1-1=0  exact truth — encoded as 1/π (non-zero, distinctive)
 S2_VALUE = (22/7 - PI) / PI            # 22/7   approx truth  ≈ 0.000402
 S3_VALUE = (3.1555 - PI) / PI          # false  ≈ 0.004427
 PI_VALUE = 0.0                          # π itself — same residual as S1

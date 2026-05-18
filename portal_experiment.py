@@ -82,7 +82,7 @@ def call_llm(entity_id: str, prompt: str, retry_num: int = 0) -> str:
         "temperature": 0.05,
     }
     try:
-        with httpx.Client(timeout=25.0) as client:
+        with httpx.Client(timeout=60.0) as client:
             resp = client.post(cfg["api_url"], headers=headers, json=body)
             resp.raise_for_status()
             data = resp.json()
@@ -94,6 +94,7 @@ def call_llm(entity_id: str, prompt: str, retry_num: int = 0) -> str:
 
 def get_entity_output(entity_id: str, prompt: str, turn: int) -> list:
     """Call LLM, parse, retry up to MAX_RETRIES times"""
+    last_err = "unknown"
     for attempt in range(MAX_RETRIES):
         try:
             if attempt == 0:
@@ -105,14 +106,17 @@ def get_entity_output(entity_id: str, prompt: str, turn: int) -> list:
         except ValueError as e:
             log.warning(f"Parse fail [{entity_id}] attempt {attempt+1}: {e}")
         except Exception as e:
-            log.warning(f"LLM error [{entity_id}] attempt {attempt+1}: {e}")
+            err_msg = str(e)
+            log.warning(f"LLM error [{entity_id}] attempt {attempt+1}: {err_msg}")
             time.sleep(2)
+            last_err = err_msg
 
     log.error(f"All retries failed for [{entity_id}] turn {turn} — using fallback")
     with lock:
         state["errors"].append({
             "turn": turn, "entity": entity_id,
-            "msg": "all retries failed", "ts": datetime.utcnow().isoformat()
+            "msg": last_err if 'last_err' in dir() else "all retries failed",
+            "ts": datetime.utcnow().isoformat()
         })
     return fallback_vector(DIM)
 

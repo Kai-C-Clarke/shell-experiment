@@ -9,6 +9,7 @@ import time
 import uuid
 import logging
 import threading
+import queue
 import httpx
 from datetime import datetime
 
@@ -59,6 +60,7 @@ state = {
     "last_inj":  None,
     "last_metrics": {},
     "errors":    [],
+    "inject_queue": queue.Queue(),
 }
 lock = threading.Lock()
 _thread = None
@@ -127,6 +129,7 @@ def run_loop():
         state["outputs"] = {"A": [0.0]*DIM, "B": [0.0]*DIM, "C": [0.0]*DIM}
         state["history"] = {"A": [], "B": [], "C": []}
         state["errors"] = []
+        state["inject_queue"] = queue.Queue()
         run_id = state["run_id"]
 
     init_db()
@@ -141,8 +144,13 @@ def run_loop():
             prev_outputs = {e: list(v) for e, v in state["outputs"].items()}
             history = {e: list(h) for e, h in state["history"].items()}
 
-        # Get injection for this turn
-        injection = get_injection(turn)
+        # Drain any manual injections queued via /portal/inject
+        try:
+            manual = state["inject_queue"].get_nowait()
+            injection = manual
+        except queue.Empty:
+            # Get scheduled injection for this turn
+            injection = get_injection(turn)
         log_injection(run_id, turn, injection)
         inj_vec = injection["vector"]
 
@@ -257,7 +265,14 @@ def start_portal_experiment(app):
             inj = {"vector": vec, "label": label, "type": "manual",
                    "turn": turn, "meta": {}}
             log_injection(run_id, turn, inj)
-        return jsonify({"ok": True, "label": label, "turn": turn})
+        # Push onto the live queue so run_loop picks it up next turn
+        with lock:
+            if state["status"] == "running":
+                state["inject_queue"].put({
+                    "vector": vec, "label": label, "type": "manual",
+                    "turn": turn, "meta": {}
+                })
+        return jsonify({"ok": True, "label": label, "turn": turn, "queued": True})
 
     @app.route("/portal/start", methods=["POST"])
     def portal_start():

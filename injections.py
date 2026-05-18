@@ -91,6 +91,10 @@ def _load_runtime_sequence():
         for s in steps:
             if "turn_start" not in s or "turn_end" not in s or "type" not in s:
                 return None
+            if s["turn_start"] >= s["turn_end"]:
+                return None
+            if s["type"] == "statement" and "value" not in s:
+                return None
         return steps
     except Exception:
         return None

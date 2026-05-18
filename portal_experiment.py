@@ -9,7 +9,7 @@ import time
 import uuid
 import logging
 import threading
-import httpx
+import requests as _requests
 from datetime import datetime
 
 from injections import get_injection, DIM
@@ -283,5 +283,15 @@ def start_portal_experiment(app):
     def portal_errors():
         with lock:
             return jsonify(state["errors"])
+
+    @app.route("/portal/ping")
+    def portal_ping():
+        """Test outbound connectivity from Render"""
+        import requests as _req
+        try:
+            r = _req.get("https://api.deepseek.com", timeout=10)
+            return jsonify({"reachable": True, "status": r.status_code})
+        except Exception as e:
+            return jsonify({"reachable": False, "error": str(e)})
 
     log.info("Portal experiment routes registered — /portal/* active")

@@ -30,7 +30,6 @@ def build_prompt(entity_id: str,
     Minimal symbolic prompt. Fits comfortably in 500 tokens.
     priming flag kept for API compatibility but no longer adds a block.
     """
-    # Only include last own output, not full history
     last_self = self_hist[-1] if self_hist else [0.0] * dim
 
     lines = [

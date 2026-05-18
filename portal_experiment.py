@@ -9,7 +9,7 @@ import time
 import uuid
 import logging
 import threading
-import requests as _requests
+import httpx
 from datetime import datetime
 
 from injections import get_injection, DIM
@@ -22,7 +22,7 @@ log = logging.getLogger(__name__)
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-TURN_INTERVAL  = int(os.environ.get("PORTAL_TURN_INTERVAL", os.environ.get("SHELL_TURN_INTERVAL", 30)))  # seconds
+TURN_INTERVAL  = int(os.environ.get("PORTAL_TURN_INTERVAL", 30))   # seconds
 MAX_RETRIES    = 3
 SHARED_HISTORY = 3   # how many past outputs in SHR block
 SELF_HISTORY   = 2   # how many own past outputs in SLF block
@@ -37,7 +37,7 @@ ENTITIES = {
     "B": {
         "name": "Qwen",
         "api_url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions",
-        "model":   "qwen3.6-flash",
+        "model":   "qwen-plus",
         "api_key": os.environ.get("QWEN_API_KEY", ""),
     },
     "C": {
@@ -78,14 +78,15 @@ def call_llm(entity_id: str, prompt: str, retry_num: int = 0) -> str:
             {"role": "system", "content": build_system_prompt()},
             {"role": "user",   "content": prompt},
         ],
-        "max_tokens":  300,
+        "max_tokens":  120,
         "temperature": 0.05,
     }
     try:
-        resp = _requests.post(cfg["api_url"], headers=headers, json=body, timeout=60)
-        resp.raise_for_status()
-        data = resp.json()
-        return data["choices"][0]["message"]["content"]
+        with httpx.Client(timeout=25.0) as client:
+            resp = client.post(cfg["api_url"], headers=headers, json=body)
+            resp.raise_for_status()
+            data = resp.json()
+            return data["choices"][0]["message"]["content"]
     except Exception as e:
         log.warning(f"LLM call failed [{entity_id}] attempt {retry_num}: {e}")
         raise
@@ -93,7 +94,6 @@ def call_llm(entity_id: str, prompt: str, retry_num: int = 0) -> str:
 
 def get_entity_output(entity_id: str, prompt: str, turn: int) -> list:
     """Call LLM, parse, retry up to MAX_RETRIES times"""
-    last_err = "unknown"
     for attempt in range(MAX_RETRIES):
         try:
             if attempt == 0:
@@ -103,20 +103,16 @@ def get_entity_output(entity_id: str, prompt: str, turn: int) -> list:
                 raw = call_llm(entity_id, retry_p, retry_num=attempt)
             return strict_parse_output(raw, DIM)
         except ValueError as e:
-            last_err = f"parse_fail: {e}"
             log.warning(f"Parse fail [{entity_id}] attempt {attempt+1}: {e}")
         except Exception as e:
-            err_msg = str(e)
-            log.warning(f"LLM error [{entity_id}] attempt {attempt+1}: {err_msg}")
+            log.warning(f"LLM error [{entity_id}] attempt {attempt+1}: {e}")
             time.sleep(2)
-            last_err = err_msg
 
     log.error(f"All retries failed for [{entity_id}] turn {turn} — using fallback")
     with lock:
         state["errors"].append({
             "turn": turn, "entity": entity_id,
-            "msg": last_err if 'last_err' in dir() else "all retries failed",
-            "ts": datetime.utcnow().isoformat()
+            "msg": "all retries failed", "ts": datetime.utcnow().isoformat()
         })
     return fallback_vector(DIM)
 
@@ -283,34 +279,5 @@ def start_portal_experiment(app):
     def portal_errors():
         with lock:
             return jsonify(state["errors"])
-
-    @app.route("/portal/ping")
-    def portal_ping():
-        import requests as _req
-        try:
-            r = _req.get("https://api.deepseek.com", timeout=10)
-            return jsonify({"reachable": True, "status": r.status_code})
-        except Exception as e:
-            return jsonify({"reachable": False, "error": str(e)})
-
-    @app.route("/portal/test")
-    def portal_test():
-        """Make a single live LLM call and return raw result or error"""
-        import requests as _req, traceback
-        cfg = ENTITIES["A"]
-        headers = {"Authorization": f"Bearer {cfg['api_key']}", "Content-Type": "application/json"}
-        body = {
-            "model": cfg["model"],
-            "messages": [
-                {"role": "system", "content": "Output 4 floats. Format: OUT:[x1 x2 x3 x4]. No other text."},
-                {"role": "user",   "content": "P:1.0 E:A R:1 D:4\nINP:[0.0 0.0 0.0 0.0]\nOUT:"}
-            ],
-            "max_tokens": 30, "temperature": 0.05
-        }
-        try:
-            resp = _req.post(cfg["api_url"], headers=headers, json=body, timeout=30)
-            return jsonify({"status": resp.status_code, "body": resp.text[:500]})
-        except Exception as e:
-            return jsonify({"error": str(e), "trace": traceback.format_exc()[-500:]})
 
     log.info("Portal experiment routes registered — /portal/* active")

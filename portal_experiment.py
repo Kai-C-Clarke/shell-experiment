@@ -60,7 +60,7 @@ state = {
     "last_inj":  None,
     "last_metrics": {},
     "errors":    [],
-    "inject_queue": queue.Queue(),
+    "inject_queue": queue.Queue(maxsize=1),
 }
 lock = threading.Lock()
 _thread = None
@@ -129,7 +129,7 @@ def run_loop():
         state["outputs"] = {"A": [0.0]*DIM, "B": [0.0]*DIM, "C": [0.0]*DIM}
         state["history"] = {"A": [], "B": [], "C": []}
         state["errors"] = []
-        state["inject_queue"] = queue.Queue()
+        state["inject_queue"] = queue.Queue(maxsize=1)
         run_id = state["run_id"]
 
     init_db()
@@ -268,6 +268,8 @@ def start_portal_experiment(app):
         # Push onto the live queue so run_loop picks it up next turn
         with lock:
             if state["status"] == "running":
+                if state["inject_queue"].full():
+                    return jsonify({"ok": False, "reason": "queue full — previous injection still pending"}), 429
                 state["inject_queue"].put({
                     "vector": vec, "label": label, "type": "manual",
                     "turn": turn, "meta": {}

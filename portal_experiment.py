@@ -22,7 +22,7 @@ log = logging.getLogger(__name__)
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-TURN_INTERVAL  = int(os.environ.get("PORTAL_TURN_INTERVAL", 30))   # seconds
+TURN_INTERVAL  = int(os.environ.get("PORTAL_TURN_INTERVAL", os.environ.get("SHELL_TURN_INTERVAL", 30)))  # seconds
 MAX_RETRIES    = 3
 SHARED_HISTORY = 3   # how many past outputs in SHR block
 SELF_HISTORY   = 2   # how many own past outputs in SLF block
@@ -37,7 +37,7 @@ ENTITIES = {
     "B": {
         "name": "Qwen",
         "api_url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions",
-        "model":   "qwen-plus",
+        "model":   "qwen3.6-flash",
         "api_key": os.environ.get("QWEN_API_KEY", ""),
     },
     "C": {

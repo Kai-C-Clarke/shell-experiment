@@ -103,6 +103,7 @@ def get_entity_output(entity_id: str, prompt: str, turn: int) -> list:
                 raw = call_llm(entity_id, retry_p, retry_num=attempt)
             return strict_parse_output(raw, DIM)
         except ValueError as e:
+            last_err = f"parse_fail: {e}"
             log.warning(f"Parse fail [{entity_id}] attempt {attempt+1}: {e}")
         except Exception as e:
             err_msg = str(e)

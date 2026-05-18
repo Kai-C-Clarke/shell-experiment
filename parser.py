@@ -1,6 +1,6 @@
 """
 parser.py — Strict numerical output enforcement.
-Parse -> validate -> retry on failure. No text passes through.
+Parse → validate → retry on failure. No text passes through.
 """
 import re
 import logging
@@ -17,10 +17,10 @@ def strict_parse_output(raw: str, dim: int = DIM) -> list:
     Tries multiple patterns. Raises ValueError if all fail.
     """
     patterns = [
-        r"OUT:\s*\[([\d\s\.\-eE,]+)\]",
-        r"OUT:\s*([\d\s\.\-eE,]+)$",
-        r"\{[^}]*[\"\']?out[\"\']?\s*:\s*\[([\d\s\.\-eE,]+)\]",
-        r"\[([\d\s\.\-eE,]+)\]",
+        r"OUT:\s*\[([\d\s\.\-eE,]+)\]",                          # OUT:[1.23 4.56]
+        r"OUT:\s*([\d\s\.\-eE,]+)$",                             # OUT: 1.23 4.56 (no brackets)
+        r"\{[^}]*[\"']?out[\"']?\s*:\s*\[([\d\s\.\-eE,]+)\]",   # {"out": [...]}
+        r"\[([\d\s\.\-eE,]+)\]",                                  # bare array
     ]
 
     for pat in patterns:
@@ -29,6 +29,7 @@ def strict_parse_output(raw: str, dim: int = DIM) -> list:
             numbers = re.findall(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?", match.group(1))
             if len(numbers) == dim:
                 parsed = [float(x) for x in numbers]
+                # Clamp to [-1, 1]
                 clamped = [max(-1.0, min(1.0, x)) for x in parsed]
                 return clamped
 
@@ -36,16 +37,18 @@ def strict_parse_output(raw: str, dim: int = DIM) -> list:
 
 
 def make_retry_prompt(round_num: int, dim: int = DIM) -> str:
+    """Stronger formatting hint on retry — still minimal language"""
     return (
         f"RND:{round_num} PARSE_FAIL\n"
         f"REQUIRED: OUT:[x1 x2 ... x{dim}]\n"
-        f"EXAMPLE: OUT:[0.1234 -0.5678 0.0000] ({dim} floats)\n"
-        "OUT:"
+        f"EXAMPLE: OUT:[0.1234 -0.5678 0.0000 ...] ({dim} floats)\n"
+        f"OUT:"
     )
 
 
 def fallback_vector(dim: int = DIM) -> list:
-    log.warning("All parse retries failed — using silence fallback")
+    """Emergency fallback — silence. Used if all retries fail."""
+    log.warning(f"All parse retries failed — using silence fallback")
     return [0.0] * dim
 
 

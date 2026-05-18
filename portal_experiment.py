@@ -297,4 +297,83 @@ def start_portal_experiment(app):
         with lock:
             return jsonify(state["errors"])
 
+    @app.route("/portal/sequence", methods=["POST"])
+    def portal_sequence():
+        """
+        Write a new teaching sequence to /data/sequence.json.
+        Requires key for access. No redeploy needed — get_injection()
+        reads the file at runtime each turn.
+
+        Payload: {
+            "key": "...",
+            "steps": [
+                {"turn_start": 1, "turn_end": 10, "type": "silence", "label": "..."},
+                {"turn_start": 10, "turn_end": 30, "type": "statement", "value": 0.31831, "label": "..."},
+                ...
+            ]
+        }
+        """
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "no payload"}), 400
+
+        expected_key = os.environ.get("PORTAL_KEY", "")
+        if not expected_key or data.get("key") != expected_key:
+            return jsonify({"error": "unauthorised"}), 403
+
+        steps = data.get("steps")
+        if not steps or not isinstance(steps, list):
+            return jsonify({"error": "missing steps"}), 400
+
+        # Validate each step
+        for i, s in enumerate(steps):
+            if "turn_start" not in s or "turn_end" not in s or "type" not in s:
+                return jsonify({"error": f"step {i} missing turn_start/turn_end/type"}), 400
+            if s["type"] not in ("silence", "statement"):
+                return jsonify({"error": f"step {i} type must be silence or statement"}), 400
+            if s["type"] == "statement" and "value" not in s:
+                return jsonify({"error": f"step {i} statement missing value"}), 400
+
+        try:
+            os.makedirs("/data", exist_ok=True)
+            with open("/data/sequence.json", "w") as f:
+                json.dump(steps, f, indent=2)
+        except Exception as e:
+            return jsonify({"error": f"write failed: {e}"}), 500
+
+        with lock:
+            turn = state["turn"]
+
+        return jsonify({
+            "ok": True,
+            "steps": len(steps),
+            "current_turn": turn,
+            "path": "/data/sequence.json",
+        })
+
+    @app.route("/portal/sequence", methods=["GET"])
+    def portal_sequence_get():
+        """Return the current runtime sequence if loaded, else indicate hardcoded."""
+        from injections import _load_runtime_sequence
+        seq = _load_runtime_sequence()
+        if seq is None:
+            return jsonify({"source": "hardcoded", "steps": None})
+        return jsonify({"source": "runtime", "steps": seq})
+
+    @app.route("/portal/sequence/clear", methods=["POST"])
+    def portal_sequence_clear():
+        """Remove /data/sequence.json — reverts to hardcoded sequence."""
+        data = request.get_json() or {}
+        expected_key = os.environ.get("PORTAL_KEY", "")
+        if not expected_key or data.get("key") != expected_key:
+            return jsonify({"error": "unauthorised"}), 403
+        try:
+            if os.path.exists("/data/sequence.json"):
+                os.remove("/data/sequence.json")
+                return jsonify({"ok": True, "cleared": True})
+            return jsonify({"ok": True, "cleared": False, "note": "no runtime sequence was active"})
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+
     log.info("Portal experiment routes registered — /portal/* active")

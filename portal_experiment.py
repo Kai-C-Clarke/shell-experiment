@@ -336,8 +336,10 @@ def start_portal_experiment(app):
 
         try:
             os.makedirs("/data", exist_ok=True)
-            with open("/data/sequence.json", "w") as f:
+            tmp = "/data/sequence.json.tmp"
+            with open(tmp, "w") as f:
                 json.dump(steps, f, indent=2)
+            os.replace(tmp, "/data/sequence.json")  # atomic on POSIX
         except Exception as e:
             return jsonify({"error": f"write failed: {e}"}), 500
 

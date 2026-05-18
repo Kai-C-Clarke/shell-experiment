@@ -285,12 +285,31 @@ def start_portal_experiment(app):
 
     @app.route("/portal/ping")
     def portal_ping():
-        """Test outbound connectivity from Render"""
         import requests as _req
         try:
             r = _req.get("https://api.deepseek.com", timeout=10)
             return jsonify({"reachable": True, "status": r.status_code})
         except Exception as e:
             return jsonify({"reachable": False, "error": str(e)})
+
+    @app.route("/portal/test")
+    def portal_test():
+        """Make a single live LLM call and return raw result or error"""
+        import requests as _req, traceback
+        cfg = ENTITIES["A"]
+        headers = {"Authorization": f"Bearer {cfg['api_key']}", "Content-Type": "application/json"}
+        body = {
+            "model": cfg["model"],
+            "messages": [
+                {"role": "system", "content": "Output 4 floats. Format: OUT:[x1 x2 x3 x4]. No other text."},
+                {"role": "user",   "content": "P:1.0 E:A R:1 D:4\nINP:[0.0 0.0 0.0 0.0]\nOUT:"}
+            ],
+            "max_tokens": 30, "temperature": 0.05
+        }
+        try:
+            resp = _req.post(cfg["api_url"], headers=headers, json=body, timeout=30)
+            return jsonify({"status": resp.status_code, "body": resp.text[:500]})
+        except Exception as e:
+            return jsonify({"error": str(e), "trace": traceback.format_exc()[-500:]})
 
     log.info("Portal experiment routes registered — /portal/* active")

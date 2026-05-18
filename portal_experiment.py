@@ -82,11 +82,10 @@ def call_llm(entity_id: str, prompt: str, retry_num: int = 0) -> str:
         "temperature": 0.05,
     }
     try:
-        with httpx.Client(timeout=60.0) as client:
-            resp = client.post(cfg["api_url"], headers=headers, json=body)
-            resp.raise_for_status()
-            data = resp.json()
-            return data["choices"][0]["message"]["content"]
+        resp = _requests.post(cfg["api_url"], headers=headers, json=body, timeout=60)
+        resp.raise_for_status()
+        data = resp.json()
+        return data["choices"][0]["message"]["content"]
     except Exception as e:
         log.warning(f"LLM call failed [{entity_id}] attempt {retry_num}: {e}")
         raise

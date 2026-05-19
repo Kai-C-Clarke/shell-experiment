@@ -52,7 +52,7 @@ def strict_parse_output(raw: str, dim: int = DIM) -> list:
         
         # Try bracketed format first: [1.23 4.56 ...]
         candidate = candidate.strip()  # handle newline between OUT: and vector
-        bracket_match = re.match(r"\[([^\]]+)\]", candidate)
+        bracket_match = re.search(r"\[([^\]]+)\]", candidate)
         if bracket_match:
             numbers = re.findall(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?", bracket_match.group(1))
             if len(numbers) == dim:
@@ -86,7 +86,8 @@ def make_retry_prompt(round_num: int, dim: int = DIM) -> str:
     """
     return (
         f"RND:{round_num} PARSE_FAIL\n"
-        f"REQUIRED: OUT:[x1 x2 ... x{dim}] ({dim} floats in [-1,1])\n"
+        f"REQUIRED FORMAT — Respond with exactly this:\n"
+        f"OUT:[x1 x2 x3 ... x{dim}]   ← {dim} numbers between -1 and 1\n"
         f"OUT:"
     )
 

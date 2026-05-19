@@ -378,4 +378,11 @@ def start_portal_experiment(app):
             return jsonify({"error": str(e)}), 500
 
 
+
+    @app.route("/portal/raw_last_response")
+    def portal_raw_last_response():
+        """Return the last raw LLM responses before parsing — for debugging."""
+        from parser import get_last_raw
+        return jsonify(get_last_raw())
+
     log.info("Portal experiment routes registered — /portal/* active")

@@ -22,8 +22,12 @@ _last_raw = {}
 
 
 def record_raw(entity_id: str, raw: str):
-    """Store raw LLM response for debugging."""
-    _last_raw[entity_id] = raw[-800:]  # last 800 chars
+    """
+    Store raw LLM response for debugging.
+    entity_id is passed through from the call site (portal_experiment.py)
+    so /portal/raw_last_response shows per-entity last responses.
+    """
+    _last_raw[entity_id] = raw[-800:]
 
 
 def get_last_raw() -> dict:
@@ -36,7 +40,7 @@ def strict_parse_output(raw: str, dim: int = DIM) -> list:
     Anchors to the LAST OUT: line to avoid matching prompt examples.
     Raises ValueError if all patterns fail.
     """
-    record_raw("_last", raw)
+    record_raw("_last", raw)  # global slot; per-entity stored by portal_experiment via record_raw(entity_id, raw)
 
     # Split on OUT: and take the LAST segment — that's the actual response
     # This prevents matching any OUT: example earlier in the prompt echo
@@ -47,6 +51,7 @@ def strict_parse_output(raw: str, dim: int = DIM) -> list:
         candidate = segments[-1].strip()
         
         # Try bracketed format first: [1.23 4.56 ...]
+        candidate = candidate.strip()  # handle newline between OUT: and vector
         bracket_match = re.match(r"\[([^\]]+)\]", candidate)
         if bracket_match:
             numbers = re.findall(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?", bracket_match.group(1))

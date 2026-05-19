@@ -15,7 +15,7 @@ from datetime import datetime
 
 from injections import get_injection, DIM
 from prompt_builder import build_prompt, build_system_prompt
-from parser import strict_parse_output, make_retry_prompt, fallback_vector
+from parser import strict_parse_output, make_retry_prompt, fallback_vector, record_raw
 from analysis import (init_db, log_injection, log_turn, log_cross_entity,
                       get_summary, get_recent_turns)
 
@@ -103,6 +103,7 @@ def get_entity_output(entity_id: str, prompt: str, turn: int) -> list:
             else:
                 retry_p = make_retry_prompt(turn, DIM)
                 raw = call_llm(entity_id, retry_p, retry_num=attempt)
+            record_raw(entity_id, raw)
             return strict_parse_output(raw, DIM)
         except ValueError as e:
             log.warning(f"Parse fail [{entity_id}] attempt {attempt+1}: {e}")
@@ -381,7 +382,10 @@ def start_portal_experiment(app):
 
     @app.route("/portal/raw_last_response")
     def portal_raw_last_response():
-        """Return the last raw LLM responses before parsing — for debugging."""
+        """
+        Return the last raw LLM response per entity before parsing.
+        Useful for diagnosing parse failures — shows exactly what each model returned.
+        """
         from parser import get_last_raw
         return jsonify(get_last_raw())
 

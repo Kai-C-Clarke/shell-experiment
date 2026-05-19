@@ -44,7 +44,7 @@ ENTITIES = {
     "C": {
         "name": "Mistral",
         "api_url": "https://api.mistral.ai/v1/chat/completions",
-        "model":   "mistral-small-latest",
+        "model":   "mistral-large-latest",
         "api_key": os.environ.get("MISTRAL_API_KEY", ""),
     },
 }

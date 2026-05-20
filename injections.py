@@ -93,7 +93,7 @@ def _load_runtime_sequence():
                 return None
             if s["turn_start"] >= s["turn_end"]:
                 return None
-            if s["type"] == "statement" and "value" not in s:
+            if s["type"] == "statement" and "value" not in s and "vector" not in s:
                 return None
         return steps
     except Exception:
@@ -115,7 +115,13 @@ def get_injection(turn: int) -> dict:
                 itype = step["type"]
                 label = step.get("label", "runtime_step")
                 value = float(step.get("value", 0.0))
-                vec   = constant_vector(value) if itype == "statement" else zero_vector()
+                # Support pre-computed zone vectors directly in sequence file
+                if "vector" in step and isinstance(step["vector"], list) and len(step["vector"]) == dim:
+                    vec = [max(-1.0, min(1.0, float(x))) for x in step["vector"]]
+                elif itype == "statement":
+                    vec = constant_vector(value)
+                else:
+                    vec = zero_vector()
                 return {
                     "vector": vec,
                     "label":  label,

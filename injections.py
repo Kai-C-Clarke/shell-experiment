@@ -21,6 +21,9 @@ All values π-normalised. No language reaches the entities.
 import os
 import json
 import math
+import logging
+
+log = logging.getLogger(__name__)
 
 DIM = 32
 PI  = math.pi
@@ -90,13 +93,17 @@ def _load_runtime_sequence():
         # Validate minimal structure
         for s in steps:
             if "turn_start" not in s or "turn_end" not in s or "type" not in s:
+                log.warning(f"sequence.json invalid: step missing turn_start/turn_end/type — falling back to hardcoded")
                 return None
             if s["turn_start"] >= s["turn_end"]:
+                log.warning(f"sequence.json invalid: turn_start >= turn_end in step {s} — falling back to hardcoded")
                 return None
             if s["type"] == "statement" and "value" not in s and "vector" not in s:
+                log.warning(f"sequence.json invalid: statement step missing value/vector — falling back to hardcoded")
                 return None
         return steps
-    except Exception:
+    except Exception as e:
+        log.warning(f"sequence.json failed to load ({e}) — falling back to hardcoded")
         return None
 
 

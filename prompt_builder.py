@@ -63,6 +63,7 @@ def build_prompt(entity_id: str,
     lines.append("")
     lines.append(f"INP:{fmt_vec(injection)}")
     lines.append("")
+    lines.append("WARN:DO_NOT_COPY_EXAMPLES")
     lines.append("OUT:")
 
     return "\n".join(lines)
@@ -77,5 +78,7 @@ def build_system_prompt() -> str:
         "You are a numerical state processor. "
         "Each turn: read INP and SHR arrays, update your internal state, "
         "output exactly one array of DIM floats on the OUT: line. "
-        "Format: OUT:[x1 x2 ... xN]. No other text."
+        "Format: OUT:[x1 x2 ... xN]. No other text. "
+        "Do NOT output placeholder, example, or template values. "
+        "Compute your output from the actual INP and SHR values provided."
     )

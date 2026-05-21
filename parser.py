@@ -40,7 +40,7 @@ def strict_parse_output(raw: str, dim: int = DIM) -> list:
     Anchors to the LAST OUT: line to avoid matching prompt examples.
     Raises ValueError if all patterns fail.
     """
-    record_raw("_last", raw)  # global slot; per-entity stored by portal_experiment via record_raw(entity_id, raw)
+    # per-entity raw stored by portal_experiment.py via record_raw(entity_id, raw)
 
     # Split on OUT: and take the LAST segment — that's the actual response
     # This prevents matching any OUT: example earlier in the prompt echo

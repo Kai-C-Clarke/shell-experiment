@@ -116,7 +116,7 @@ def get_injection(turn: int) -> dict:
                 label = step.get("label", "runtime_step")
                 value = float(step.get("value", 0.0))
                 # Support pre-computed zone vectors directly in sequence file
-                if "vector" in step and isinstance(step["vector"], list) and len(step["vector"]) == dim:
+                if "vector" in step and isinstance(step["vector"], list) and len(step["vector"]) == DIM:
                     vec = [max(-1.0, min(1.0, float(x))) for x in step["vector"]]
                 elif itype == "statement":
                     vec = constant_vector(value)

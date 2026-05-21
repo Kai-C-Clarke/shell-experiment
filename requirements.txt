@@ -1,5 +1,4 @@
 flask
 flask-cors
 httpx
-requests
 gunicorn

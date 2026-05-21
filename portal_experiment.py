@@ -253,22 +253,23 @@ def start_portal_experiment(app):
 
     @app.route("/portal/inject", methods=["POST"])
     def portal_inject():
-        """Manual injection endpoint — accepts {vector: [...], label: str}"""
+        """Manual injection endpoint — accepts {key: str, vector: [...], label: str}"""
         data = request.get_json()
         if not data or "vector" not in data:
             return jsonify({"error": "missing vector"}), 400
+
+        expected_key = os.environ.get("PORTAL_KEY", "")
+        if not expected_key or data.get("key") != expected_key:
+            return jsonify({"error": "unauthorised"}), 403
+
         vec = data["vector"]
         if len(vec) != DIM:
             return jsonify({"error": f"vector must be {DIM} floats"}), 400
         label = data.get("label", "manual_inject")
         with lock:
-            run_id = state["run_id"]
-            turn   = state["turn"]
-        if run_id:
-            inj = {"vector": vec, "label": label, "type": "manual",
-                   "turn": turn, "meta": {}}
-            log_injection(run_id, turn, inj)
-        # Push onto the live queue so run_loop picks it up next turn
+            turn = state["turn"]
+        # run_loop calls log_injection when it drains the queue, so the DB
+        # record will carry the correct turn number for when it's actually applied.
         with lock:
             if state["status"] == "running":
                 if state["inject_queue"].full():

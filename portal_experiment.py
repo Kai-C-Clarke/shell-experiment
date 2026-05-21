@@ -84,7 +84,7 @@ def call_llm(entity_id: str, prompt: str, retry_num: int = 0) -> str:
         "temperature": 0.05,
     }
     try:
-        with httpx.Client(timeout=25.0) as client:
+        with httpx.Client(timeout=15.0) as client:
             resp = client.post(cfg["api_url"], headers=headers, json=body)
             resp.raise_for_status()
             data = resp.json()
@@ -109,7 +109,7 @@ def get_entity_output(entity_id: str, prompt: str, turn: int) -> list:
             log.warning(f"Parse fail [{entity_id}] attempt {attempt+1}: {e}")
         except Exception as e:
             log.warning(f"LLM error [{entity_id}] attempt {attempt+1}: {e}")
-            time.sleep(2)
+            time.sleep(1)
 
     log.error(f"All retries failed for [{entity_id}] turn {turn} — using fallback")
     with lock:

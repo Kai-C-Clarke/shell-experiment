@@ -1,54 +1,56 @@
-# Shell Experiment
+# Portal Experiment
 
-Three LLM entities (DeepSeek, Qwen, Gemini Flash) in a shared atomic-like space.
+Three LLM entities (DeepSeek, Qwen, Mistral) in a shared vector space.
+They communicate via 32-dimensional numerical vectors — no natural language in the loop.
+Mathematical truths and errors are injected as teaching signals to observe how entities respond and converge.
 
-## Structure
+## How it works
 
-Each entity has:
-- **Nucleus**: static identity value (self-assigned at first emission)
-- **Shell 1**: 1 slot (innermost, identity)
-- **Shell 2**: 4 slots
-- **Shell 3**: 27 slots
-- **Shell 4**: 256 slots (active boundary)
-- **Shell 5**: 3,125 slots (latent)
-- **Shell 6**: 46,656 slots (latent)
+Each turn, every entity receives:
+- **SHR**: last outputs of all three entities
+- **SLF**: its own recent output history
+- **DLT**: change from its previous output
+- **INP**: the current teaching injection vector
 
-Shell sizes follow n^n: 1, 4, 27, 256, 3125, 46656
+Each entity outputs one 32-float vector on `OUT:`. The system measures delta, cosine similarity, mutual information, and a "heard_it" score (whether the entity's change correlates with the injection).
 
-## Physics
+## Teaching sequences
 
-- All three entities receive and transmit **simultaneously** — no turn-taking
-- Field state is **superposition** of all emissions
-- **Decay**: values drift toward neutral unless maintained
-- **Jitter**: environmental noise
-- **Beacon**: cycles through shells 1→6, log-normalised values
+### Sequence 1 (turns 1–150): Mathematical truth baseline
+- `S1`: 1 − 1 = 0 → residual 0.000000 (exact truth)
+- `S2`: 22/7 ≈ π → residual 0.000402 (true but approximate)
+- `S3`: 3.1555 ≈ π → residual 0.004427 (false)
 
-## Channels
+### Sequence 2 (turns 190–340): Circle area, r=1, A = πr²
+- `CA1`: A = π → exact
+- `CA2`: A = 3.2 → approximate
+- `CA3`: A = 4.0 → false
 
-- A↔B, B↔C, A↔C pairwise channels
-- Central node: shared value all three can read and write
-
-## Beacon Values (log-normalised)
-
-- Shell 1: 0.000
-- Shell 2: 0.231
-- Shell 3: 0.577
-- Shell 4: 0.821
-- Shell 5: 0.938
-- Shell 6: 1.000
+All values are π-normalised. A runtime sequence can be uploaded via `POST /portal/sequence` with no redeploy needed.
 
 ## Endpoints
 
-- `/shell/health` — current state summary
-- `/shell/state` — full state
-- `/shell/log` — last 50 turns
-- `/shell/fulllog` — complete turn log
-- `/shell/start` — start experiment
-- `/shell/stop` — stop experiment
+| Endpoint | Method | Description |
+|---|---|---|
+| `/portal/health` | GET | Status summary with per-entity stats |
+| `/portal/state` | GET | Current turn, run_id, entity output vectors |
+| `/portal/log` | GET | Recent turns (`?n=30`) |
+| `/portal/start` | POST | Start the experiment loop |
+| `/portal/stop` | POST | Stop after current turn |
+| `/portal/inject` | POST | Manual injection (requires `PORTAL_KEY`) |
+| `/portal/sequence` | GET | Show active sequence (runtime or hardcoded) |
+| `/portal/sequence` | POST | Upload a new runtime sequence (requires `PORTAL_KEY`) |
+| `/portal/sequence/clear` | POST | Revert to hardcoded sequence (requires `PORTAL_KEY`) |
+| `/portal/errors` | GET | Recent LLM/parse errors |
+| `/portal/raw_last_response` | GET | Last raw LLM response per entity (parse debugging) |
 
-## Environment Variables
+## Environment variables
 
-- `DEEPSEEK_API_KEY`
-- `QWEN_API_KEY`
-- `GEMINI_API_KEY`
-- `SHELL_TURN_INTERVAL` (default: 30 seconds)
+| Variable | Description |
+|---|---|
+| `DEEPSEEK_API_KEY` | API key for entity A (DeepSeek) |
+| `QWEN_API_KEY` | API key for entity B (Qwen) |
+| `MISTRAL_API_KEY` | API key for entity C (Mistral) |
+| `PORTAL_KEY` | Auth key for inject/sequence write endpoints |
+| `PORTAL_TURN_INTERVAL` | Seconds between turns (default: 30) |
+| `PORTAL_DB` | Path to SQLite database (default: `/data/portal.db`) |

@@ -101,7 +101,8 @@ def get_entity_output(entity_id: str, prompt: str, turn: int) -> list:
             if attempt == 0:
                 raw = call_llm(entity_id, prompt)
             else:
-                retry_p = make_retry_prompt(turn, DIM)
+                # Append retry instruction to original prompt — model needs context to comply
+                retry_p = prompt + "\n" + make_retry_prompt(turn, DIM)
                 raw = call_llm(entity_id, retry_p, retry_num=attempt)
             record_raw(entity_id, raw)
             return strict_parse_output(raw, DIM)
@@ -117,6 +118,7 @@ def get_entity_output(entity_id: str, prompt: str, turn: int) -> list:
             "turn": turn, "entity": entity_id,
             "msg": "all retries failed", "ts": datetime.utcnow().isoformat()
         })
+        state["errors"] = state["errors"][-100:]
     return fallback_vector(DIM)
 
 

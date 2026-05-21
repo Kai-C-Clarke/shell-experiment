@@ -66,7 +66,7 @@ def init_db():
 
 
 def log_injection(run_id: str, turn: int, injection: dict):
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.execute(
         "INSERT INTO injections (run_id, turn, label, itype, vector, meta) VALUES (?,?,?,?,?,?)",
         (run_id, turn, injection["label"], injection["type"],
@@ -84,7 +84,7 @@ def log_turn(run_id: str, turn: int, entity: str, output: list,
     inj_c   = cosine_similarity(diff, injection_vec) if any(injection_vec) else 0.0
     heard   = int(delta_n > HEARD_IT_DELTA_THRESHOLD and inj_c > HEARD_IT_CORR_THRESHOLD)
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.execute(
         """INSERT INTO turns
            (run_id, turn, entity, output, delta_norm, cosine_prev, inj_corr, heard_it, timestamp)
@@ -107,7 +107,7 @@ def log_turn(run_id: str, turn: int, entity: str, output: list,
 def log_cross_entity(run_id: str, turn: int, outputs: dict):
     """outputs = {"A": [...], "B": [...], "C": [...]}"""
     pairs = [("AB", "A", "B"), ("AC", "A", "C"), ("BC", "B", "C")]
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     for pair, e1, e2 in pairs:
         if e1 in outputs and e2 in outputs:
             cos = cosine_similarity(outputs[e1], outputs[e2])
@@ -175,7 +175,7 @@ def mi_approx(a: list, b: list, bins: int = 8) -> float:
 
 def get_summary(run_id: str) -> dict:
     """Summary stats for /portal/health endpoint"""
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     c = conn.cursor()
 
     c.execute("SELECT MAX(turn) FROM turns WHERE run_id=?", (run_id,))
@@ -215,7 +215,7 @@ def get_summary(run_id: str) -> dict:
 
 
 def get_recent_turns(run_id: str, n: int = 20) -> list:
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     c = conn.cursor()
     c.execute("""SELECT turn, entity, delta_norm, cosine_prev, inj_corr, heard_it
                  FROM turns WHERE run_id=? ORDER BY id DESC LIMIT ?""", (run_id, n))

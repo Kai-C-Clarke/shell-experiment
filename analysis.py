@@ -12,7 +12,7 @@ from datetime import datetime
 
 log = logging.getLogger(__name__)
 
-DB_PATH = os.environ.get("PORTAL_DB", "/tmp/portal.db")
+DB_PATH = os.environ.get("PORTAL_DB", "/data/portal.db")
 
 DIM = 32
 HEARD_IT_DELTA_THRESHOLD = 0.10

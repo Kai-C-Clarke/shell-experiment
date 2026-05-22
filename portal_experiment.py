@@ -18,6 +18,9 @@ from prompt_builder import build_prompt, build_system_prompt
 from parser import strict_parse_output, make_retry_prompt, fallback_vector, record_raw
 from analysis import (init_db, log_injection, log_turn, log_cross_entity,
                       get_summary, get_recent_turns)
+from memory import (load_entity_history, append_entity_history,
+                    load_collective_memory, append_collective_memory,
+                    is_significant, compute_centroid, get_memory_snapshot)
 
 log = logging.getLogger(__name__)
 
@@ -25,8 +28,8 @@ log = logging.getLogger(__name__)
 
 TURN_INTERVAL  = int(os.environ.get("PORTAL_TURN_INTERVAL", 30))   # seconds
 MAX_RETRIES    = 3
-SHARED_HISTORY = 3   # how many past outputs in SHR block
-SELF_HISTORY   = 2   # how many own past outputs in SLF block
+N_HIST         = 8   # own history turns injected into HIST: prompt section
+K_CMEM         = 5   # collective memory entries injected into CMEM: prompt section
 
 ENTITIES = {
     "A": {
@@ -52,15 +55,15 @@ ENTITIES = {
 # ── State ─────────────────────────────────────────────────────────────────────
 
 state = {
-    "run_id":    None,
-    "turn":      0,
-    "status":    "stopped",
-    "outputs":   {"A": [0.0] * DIM, "B": [0.0] * DIM, "C": [0.0] * DIM},
-    "history":   {"A": [], "B": [], "C": []},
-    "last_inj":  None,
-    "last_metrics": {},
-    "errors":    [],
-    "inject_queue": queue.Queue(maxsize=1),
+    "run_id":         None,
+    "turn":           0,
+    "status":         "stopped",
+    "outputs":        {"A": [0.0] * DIM, "B": [0.0] * DIM, "C": [0.0] * DIM},
+    "entity_history": {"A": [], "B": [], "C": []},  # newest-first per entity
+    "last_inj":       None,
+    "last_metrics":   {},
+    "errors":         [],
+    "inject_queue":   queue.Queue(maxsize=1),
 }
 lock = threading.Lock()
 _thread = None
@@ -130,12 +133,21 @@ def run_loop():
         state["run_id"] = f"portal_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
         state["turn"] = 0
         state["outputs"] = {"A": [0.0]*DIM, "B": [0.0]*DIM, "C": [0.0]*DIM}
-        state["history"] = {"A": [], "B": [], "C": []}
+        state["entity_history"] = {"A": [], "B": [], "C": []}
         state["errors"] = []
         state["inject_queue"] = queue.Queue(maxsize=1)
         run_id = state["run_id"]
 
     init_db()
+
+    # Load persisted history for this run_id (non-empty only on restart mid-run)
+    loaded = {e: load_entity_history(e, run_id) for e in ("A", "B", "C")}
+    with lock:
+        state["entity_history"] = loaded
+    if any(loaded.values()):
+        log.info(f"Resumed entity history from disk — "
+                 f"turns: A={len(loaded['A'])} B={len(loaded['B'])} C={len(loaded['C'])}")
+
     log.info(f"Portal experiment started — run_id={run_id}")
 
     while True:
@@ -145,14 +157,15 @@ def run_loop():
             turn = state["turn"] + 1
             state["turn"] = turn
             prev_outputs = {e: list(v) for e, v in state["outputs"].items()}
-            history = {e: list(h) for e, h in state["history"].items()}
+            # Snapshot each entity's own history (newest-first) before this turn runs.
+            # Each entity uses only its own slice, so order A→B→C within the turn is safe.
+            hist_snap = {e: list(h) for e, h in state["entity_history"].items()}
 
         # Drain any manual injections queued via /portal/inject
         try:
             manual = state["inject_queue"].get_nowait()
             injection = manual
         except queue.Empty:
-            # Get scheduled injection for this turn
             injection = get_injection(turn)
         log_injection(run_id, turn, injection)
         inj_vec = injection["vector"]
@@ -160,24 +173,29 @@ def run_loop():
         with lock:
             state["last_inj"] = {"turn": turn, "label": injection["label"]}
 
-        # Build shared block — last outputs of all three entities
-        shared = [prev_outputs[e] for e in ["A", "B", "C"]]
+        shared     = [prev_outputs[e] for e in ["A", "B", "C"]]
+        collective = load_collective_memory(run_id, k=K_CMEM)
 
         new_outputs = {}
-        metrics = {}
+        metrics     = {}
 
         for entity_id in ["A", "B", "C"]:
-            self_hist = history[entity_id][-SELF_HISTORY:]
-            delta = [a - b for a, b in zip(
-                prev_outputs[entity_id],
-                (self_hist[-1] if self_hist else [0.0] * DIM)
-            )]
+            # hist_snap[entity_id] is newest-first: [T-1, T-2, T-3, ...]
+            hist = hist_snap[entity_id][:N_HIST]
+
+            # delta = T-1 output minus T-2 output (rate of change the entity experienced).
+            # Previously this was always zero because prev_outputs and self_hist[-1] were
+            # the same value. Fixed here by using the two most recent distinct entries.
+            prev_vec      = hist[0] if len(hist) >= 1 else [0.0] * DIM
+            prev_prev_vec = hist[1] if len(hist) >= 2 else [0.0] * DIM
+            delta = [a - b for a, b in zip(prev_vec, prev_prev_vec)]
 
             prompt = build_prompt(
                 entity_id=entity_id,
                 round_num=turn,
                 shared=shared,
-                self_hist=self_hist,
+                hist=hist,
+                collective=collective,
                 delta=delta,
                 injection=inj_vec,
                 dim=DIM,
@@ -186,6 +204,11 @@ def run_loop():
 
             output = get_entity_output(entity_id, prompt, turn)
             new_outputs[entity_id] = output
+
+            # Prepend to in-memory history (newest-first) and persist to disk
+            with lock:
+                state["entity_history"][entity_id].insert(0, output)
+            append_entity_history(entity_id, run_id, turn, output)
 
             m = log_turn(run_id, turn, entity_id, output,
                          prev_outputs[entity_id], inj_vec)
@@ -196,14 +219,16 @@ def run_loop():
                 f"inj_corr={m['inj_corr']:.4f} heard={m['heard_it']}"
             )
 
-        log_cross_entity(run_id, turn, new_outputs)
+        cross = log_cross_entity(run_id, turn, new_outputs)
+
+        significant, tag = is_significant(metrics, cross, injection)
+        if significant:
+            centroid = compute_centroid(new_outputs)
+            append_collective_memory(run_id, turn, tag, centroid)
+            log.info(f"T:{turn} collective memory: {tag}")
 
         with lock:
-            state["outputs"] = new_outputs
-            for e in ["A", "B", "C"]:
-                state["history"][e].append(new_outputs[e])
-                if len(state["history"][e]) > 20:
-                    state["history"][e] = state["history"][e][-20:]
+            state["outputs"]      = new_outputs
             state["last_metrics"] = metrics
 
         time.sleep(TURN_INTERVAL)
@@ -391,5 +416,17 @@ def start_portal_experiment(app):
         """
         from parser import get_last_raw
         return jsonify(get_last_raw())
+
+    @app.route("/portal/memory")
+    def portal_memory():
+        """
+        Current memory state — entity histories and collective memory.
+        entity_history.recent: last 5 vectors per entity (newest-first).
+        collective_memory.entries: last 10 significant events for this run.
+        """
+        with lock:
+            run_id   = state["run_id"]
+            hist_copy = {e: list(h) for e, h in state["entity_history"].items()}
+        return jsonify(get_memory_snapshot(run_id, hist_copy))
 
     log.info("Portal experiment routes registered — /portal/* active")

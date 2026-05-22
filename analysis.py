@@ -104,9 +104,13 @@ def log_turn(run_id: str, turn: int, entity: str, output: list,
     }
 
 
-def log_cross_entity(run_id: str, turn: int, outputs: dict):
-    """outputs = {"A": [...], "B": [...], "C": [...]}"""
+def log_cross_entity(run_id: str, turn: int, outputs: dict) -> dict:
+    """
+    outputs = {"A": [...], "B": [...], "C": [...]}
+    Returns {"AB": {"cosine": float, "mi_approx": float}, ...} for significance checks.
+    """
     pairs = [("AB", "A", "B"), ("AC", "A", "C"), ("BC", "B", "C")]
+    cross = {}
     conn = sqlite3.connect(DB_PATH, timeout=30)
     for pair, e1, e2 in pairs:
         if e1 in outputs and e2 in outputs:
@@ -116,8 +120,10 @@ def log_cross_entity(run_id: str, turn: int, outputs: dict):
                 "INSERT INTO cross_entity (run_id, turn, pair, cosine, mi_approx) VALUES (?,?,?,?,?)",
                 (run_id, turn, pair, round(cos, 6), round(mi, 6))
             )
+            cross[pair] = {"cosine": round(cos, 6), "mi_approx": round(mi, 6)}
     conn.commit()
     conn.close()
+    return cross
 
 
 # ── Metrics ───────────────────────────────────────────────────────────────────

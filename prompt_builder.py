@@ -38,15 +38,23 @@ def get_few_shot_priming(dim: int = DIM) -> str:
 
 def build_prompt(entity_id: str,
                  round_num: int,
-                 shared: list,        # list of up to 3 entity output vectors
-                 self_hist: list,     # last 2 own outputs
-                 delta: list,         # change from prev own output
+                 shared: list,        # current outputs of all 3 entities
+                 hist: list,          # own output history, newest-first, up to N entries
+                 collective: list,    # centroid vectors of significant events, oldest-first
+                 delta: list,         # change from previous own output (T-1 minus T-2)
                  injection: list,     # current teaching vector
                  dim: int = DIM,
                  priming: bool = False) -> str:
     """
     Build the symbolic prompt for one entity, one turn.
     All sections are pure numbers. No English after priming block.
+
+    Prompt layout:
+      SHR:  current field state — last output of each entity
+      HIST: this entity's own recent history, newest-first
+      CMEM: centroid vectors at significant collective events, oldest-first (omitted if empty)
+      DLT:  rate of change — T-1 output minus T-2 output
+      INP:  current teaching injection
     """
     lines = []
 
@@ -58,7 +66,9 @@ def build_prompt(entity_id: str,
     lines.append(f"ENT:{entity_id} RND:{round_num} DIM:{dim} RNG:[-1 1]")
     lines.append("")
     lines.append(f"SHR:{fmt_matrix(shared)}")
-    lines.append(f"SLF:{fmt_matrix(self_hist) if self_hist else fmt_vec([0.0]*dim)}")
+    lines.append(f"HIST:{fmt_matrix(hist) if hist else fmt_vec([0.0]*dim)}")
+    if collective:
+        lines.append(f"CMEM:{fmt_matrix(collective)}")
     lines.append(f"DLT:{fmt_vec(delta)}")
     lines.append("")
     lines.append(f"INP:{fmt_vec(injection)}")

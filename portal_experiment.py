@@ -41,7 +41,7 @@ ENTITIES = {
     "B": {
         "name": "Qwen",
         "api_url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions",
-        "model":   "qwen-plus",
+        "model":   "qwen-turbo",
         "api_key": os.environ.get("QWEN_API_KEY", ""),
     },
     "C": {
